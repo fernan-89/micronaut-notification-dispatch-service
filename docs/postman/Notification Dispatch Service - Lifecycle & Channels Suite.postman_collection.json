@@ -1,0 +1,1946 @@
+{
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "exec": [
+          "// Automatically generate standard W3C traceparent (ADR-010) and X-Trace-Id",
+          "function generateHex(len) {",
+          "    let result = '';",
+          "    const chars = '0123456789abcdef';",
+          "    for (let i = 0; i < len; i++) {",
+          "        result += chars.charAt(Math.floor(Math.random() * chars.length));",
+          "    }",
+          "    return result;",
+          "}",
+          "const traceId = generateHex(32);",
+          "const spanId = generateHex(16);",
+          "const traceparent = `00-${traceId}-${spanId}-01`;",
+          "pm.request.headers.upsert({ key: 'traceparent', value: traceparent });",
+          "pm.request.headers.upsert({ key: 'X-Trace-Id', value: traceId });",
+          "pm.environment.set('currentTraceId', traceId);"
+        ],
+        "type": "text/javascript"
+      }
+    }
+  ],
+  "info": {
+    "_exporter_id": "39879181",
+    "_postman_id": "d5e7f901-4b6c-4d8e-9f0a-5b7c9d1e3f4a",
+    "description": "Enterprise-grade E2E Postman Suite for the Notification Dispatch Service Domain (BIAN-aligned, ADR-001/005/013/019/023/024). Covers the Notification lifecycle under /notification-dispatch/v1 (initiate, retrieve, control/send|deliver|fail|retry|cancel), tenant-scoped filtered listing, retry rotation and exhaustion, RFC 7807 error_code assertions (400/404/409) and W3C traceparent correlation. Requires an organisationId environment variable populated from the Party Reference Data Directory Service Domain.",
+    "name": "Notification Dispatch Service - Lifecycle & Channels Suite",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Health status is UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Health Check (Aggregated)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ],
+              "raw": "{{base_url}}/health"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Liveness status is UP or UNKNOWN (no probe contributors registered)', () => pm.expect(['UP', 'UNKNOWN']).to.include(pm.response.json().status));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Liveness Probe",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "liveness"
+              ],
+              "raw": "{{base_url}}/health/liveness"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Readiness status is UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Readiness Probe",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "readiness"
+              ],
+              "raw": "{{base_url}}/health/readiness"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Contains JVM metrics', () => pm.expect(pm.response.text()).to.include('jvm_memory'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Prometheus Metrics",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "prometheus"
+              ],
+              "raw": "{{base_url}}/prometheus"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns Swagger UI HTML', () => pm.expect(pm.response.text()).to.include('swagger-ui'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Swagger UI",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "swagger-ui",
+                "index.html"
+              ],
+              "raw": "{{base_url}}/swagger-ui/index.html"
+            }
+          }
+        }
+      ],
+      "name": "00. Infrastructure & Telemetry"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('UUID present, status PENDING, attempts 0', () => {",
+                  "    pm.expect(json.id).to.not.be.undefined;",
+                  "    pm.expect(json.status).to.eql('PENDING');",
+                  "    pm.expect(json.attempts).to.eql(0);",
+                  "});",
+                  "pm.environment.set('notificationId', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "01. Initiate Notification (Welcome, LOG channel)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"ada@thinklab.com\",\n  \"subject\": \"Welcome\",\n  \"body\": \"Hello Ada\",\n  \"channel\": \"LOG\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{organisationId}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is PENDING', () => pm.expect(json.status).to.eql('PENDING'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "02. Retrieve Notification By ID (PENDING)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{notificationId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{notificationId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "03. Control: Send (PENDING -> SENDING)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{notificationId}}",
+                "control",
+                "send"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{notificationId}}/control/send"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is SENDING', () => pm.expect(json.status).to.eql('SENDING'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "04. Retrieve Notification By ID (SENDING)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{notificationId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{notificationId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "05. Control: Deliver (SENDING -> DELIVERED)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{notificationId}}",
+                "control",
+                "deliver"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{notificationId}}/control/deliver"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is DELIVERED', () => pm.expect(json.status).to.eql('DELIVERED'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "06. Retrieve Notification By ID (DELIVERED)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{notificationId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{notificationId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Every notification is DELIVERED and ours is included', () => {",
+                  "    pm.expect(json).to.be.an('array').that.is.not.empty;",
+                  "    json.forEach(n => pm.expect(n.status).to.eql('DELIVERED'));",
+                  "    pm.expect(json.some(n => n.id === pm.environment.get('notificationId'))).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "07. Retrieve All Notifications (Tenant Scoped, status=DELIVERED)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{organisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "DELIVERED"
+                }
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/retrieve?status=DELIVERED"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('UUID present, status PENDING, attempts 0', () => {",
+                  "    pm.expect(json.id).to.not.be.undefined;",
+                  "    pm.expect(json.status).to.eql('PENDING');",
+                  "    pm.expect(json.attempts).to.eql(0);",
+                  "});",
+                  "pm.environment.set('retryNotificationId', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "08. Initiate Notification (For failure/retry, LOG channel)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"grace@thinklab.com\",\n  \"subject\": \"Reminder\",\n  \"body\": \"Body\",\n  \"channel\": \"LOG\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{organisationId}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "09. Control: Send (PENDING -> SENDING)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{retryNotificationId}}",
+                "control",
+                "send"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{retryNotificationId}}/control/send"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "10. Control: Fail (SENDING -> FAILED)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"errorMessage\": \"smtp timeout\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{retryNotificationId}}",
+                "control",
+                "fail"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{retryNotificationId}}/control/fail"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is FAILED', () => pm.expect(json.status).to.eql('FAILED'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "11. Retrieve Notification By ID (FAILED)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{retryNotificationId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{retryNotificationId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "12. Control: Retry (FAILED -> SENDING, attempts=1)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{retryNotificationId}}",
+                "control",
+                "retry"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{retryNotificationId}}/control/retry"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('SENDING with attempts=1', () => {",
+                  "    pm.expect(json.status).to.eql('SENDING');",
+                  "    pm.expect(json.attempts).to.eql(1);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "13. Retrieve Notification By ID (attempts incremented)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{retryNotificationId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{retryNotificationId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "14. Control: Deliver (SENDING -> DELIVERED)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{retryNotificationId}}",
+                "control",
+                "deliver"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{retryNotificationId}}/control/deliver"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is DELIVERED', () => pm.expect(json.status).to.eql('DELIVERED'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "15. Retrieve Notification By ID (DELIVERED after retry)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{retryNotificationId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{retryNotificationId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('UUID present, status PENDING, attempts 0', () => {",
+                  "    pm.expect(json.id).to.not.be.undefined;",
+                  "    pm.expect(json.status).to.eql('PENDING');",
+                  "    pm.expect(json.attempts).to.eql(0);",
+                  "});",
+                  "pm.environment.set('cancelNotificationId', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "16. Initiate Notification (For cancellation, WEBHOOK channel)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"ops@thinklab.com\",\n  \"subject\": \"Heads up\",\n  \"body\": \"Body\",\n  \"channel\": \"WEBHOOK\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{organisationId}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "17. Control: Cancel (PENDING -> CANCELLED)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{cancelNotificationId}}",
+                "control",
+                "cancel"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{cancelNotificationId}}/control/cancel"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is CANCELLED', () => pm.expect(json.status).to.eql('CANCELLED'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "18. Retrieve Notification By ID (CANCELLED)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{cancelNotificationId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{cancelNotificationId}}/retrieve"
+            }
+          }
+        }
+      ],
+      "name": "01. Lifecycle Scenarios (BIAN Behavior Qualifiers)"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-VALIDATION-00400', () => {",
+                  "    pm.expect(json.status).to.eql(400);",
+                  "    pm.expect(json.error_code).to.eql('ERR-VALIDATION-00400');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "01. Initiate Notification - Blank Recipient (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"\",\n  \"subject\": \"s\",\n  \"body\": \"b\",\n  \"channel\": \"LOG\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{organisationId}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-VALIDATION-00400', () => {",
+                  "    pm.expect(json.status).to.eql(400);",
+                  "    pm.expect(json.error_code).to.eql('ERR-VALIDATION-00400');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "02. Initiate Notification - Missing Channel (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"a@b.com\",\n  \"subject\": \"s\",\n  \"body\": \"b\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{organisationId}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "03. Initiate Notification - Missing X-Tenant-Id Header (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"a@b.com\",\n  \"subject\": \"s\",\n  \"body\": \"b\",\n  \"channel\": \"LOG\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-VALIDATION-00400', () => {",
+                  "    pm.expect(json.status).to.eql(400);",
+                  "    pm.expect(json.error_code).to.eql('ERR-VALIDATION-00400');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "04. Initiate Notification - Malformed X-Tenant-Id (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"a@b.com\",\n  \"subject\": \"s\",\n  \"body\": \"b\",\n  \"channel\": \"LOG\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "not-a-uuid"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-NTF-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-NTF-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "05. Retrieve Notification - Non-existent UUID (404)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "00000000-0000-0000-0000-000000000000",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/00000000-0000-0000-0000-000000000000/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "06. Retrieve Notification - Malformed UUID Path (400)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "not-a-uuid",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/not-a-uuid/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-NTF-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-NTF-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "07. Control: Send - Non-existent UUID (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "00000000-0000-0000-0000-000000000000",
+                "control",
+                "send"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/00000000-0000-0000-0000-000000000000/control/send"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('UUID present, status PENDING, attempts 0', () => {",
+                  "    pm.expect(json.id).to.not.be.undefined;",
+                  "    pm.expect(json.status).to.eql('PENDING');",
+                  "    pm.expect(json.attempts).to.eql(0);",
+                  "});",
+                  "pm.environment.set('illegalNotificationId', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "08. Initiate Notification (Setup: illegal-transition target)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"illegal@thinklab.com\",\n  \"subject\": \"Illegal\",\n  \"body\": \"Body\",\n  \"channel\": \"LOG\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{organisationId}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-NTF-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-NTF-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "09. Control: Deliver a PENDING Notification - Illegal Jump (409)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{illegalNotificationId}}",
+                "control",
+                "deliver"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{illegalNotificationId}}/control/deliver"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-NTF-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-NTF-00409');",
+                  "});",
+                  "pm.test('Detail explains the compliance violation', () => pm.expect(json.detail).to.include('Compliance Violation'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "10. Control: Retry a PENDING Notification - Wrong Source State (409)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{illegalNotificationId}}",
+                "control",
+                "retry"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{illegalNotificationId}}/control/retry"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "11. Control: Send (Setup for idempotency test)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{illegalNotificationId}}",
+                "control",
+                "send"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{illegalNotificationId}}/control/send"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-NTF-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-NTF-00409');",
+                  "});",
+                  "pm.test('Detail explains the idempotency violation', () => pm.expect(json.detail).to.include('Idempotency Violation'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "12. Control: Send Twice - Idempotency Violation (409)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{illegalNotificationId}}",
+                "control",
+                "send"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{illegalNotificationId}}/control/send"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('UUID present, status PENDING, attempts 0', () => {",
+                  "    pm.expect(json.id).to.not.be.undefined;",
+                  "    pm.expect(json.status).to.eql('PENDING');",
+                  "    pm.expect(json.attempts).to.eql(0);",
+                  "});",
+                  "pm.environment.set('exhaustNotificationId', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "13. Initiate Notification (Setup: retry-exhaustion target)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"exhaust@thinklab.com\",\n  \"subject\": \"Exhaust\",\n  \"body\": \"Body\",\n  \"channel\": \"LOG\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{organisationId}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "14. Control: Send (Setup)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{exhaustNotificationId}}",
+                "control",
+                "send"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{exhaustNotificationId}}/control/send"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "15. Control: Fail (attempt 1 of 5)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"errorMessage\": \"down\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{exhaustNotificationId}}",
+                "control",
+                "fail"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{exhaustNotificationId}}/control/fail"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "16. Control: Retry 1/5",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{exhaustNotificationId}}",
+                "control",
+                "retry"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{exhaustNotificationId}}/control/retry"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "17. Control: Fail (attempt 2 of 5)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"errorMessage\": \"down\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{exhaustNotificationId}}",
+                "control",
+                "fail"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{exhaustNotificationId}}/control/fail"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "18. Control: Retry 2/5",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{exhaustNotificationId}}",
+                "control",
+                "retry"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{exhaustNotificationId}}/control/retry"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "19. Control: Fail (attempt 3 of 5)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"errorMessage\": \"down\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{exhaustNotificationId}}",
+                "control",
+                "fail"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{exhaustNotificationId}}/control/fail"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "20. Control: Retry 3/5",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{exhaustNotificationId}}",
+                "control",
+                "retry"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{exhaustNotificationId}}/control/retry"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "21. Control: Fail (attempt 4 of 5)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"errorMessage\": \"down\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{exhaustNotificationId}}",
+                "control",
+                "fail"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{exhaustNotificationId}}/control/fail"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "22. Control: Retry 4/5",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{exhaustNotificationId}}",
+                "control",
+                "retry"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{exhaustNotificationId}}/control/retry"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "23. Control: Fail (attempt 5 of 5)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"errorMessage\": \"down\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{exhaustNotificationId}}",
+                "control",
+                "fail"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{exhaustNotificationId}}/control/fail"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "24. Control: Retry 5/5 (attempts now at maxAttempts)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{exhaustNotificationId}}",
+                "control",
+                "retry"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{exhaustNotificationId}}/control/retry"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "25. Control: Fail Once More (attempts stays at 5)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"errorMessage\": \"down\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{exhaustNotificationId}}",
+                "control",
+                "fail"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{exhaustNotificationId}}/control/fail"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-NTF-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-NTF-00409');",
+                  "});",
+                  "pm.test('Detail explains retry exhaustion', () => pm.expect(json.detail).to.include('Retry Exhausted'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "26. Control: Retry Exhausted - Retry Beyond maxAttempts (409)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification-dispatch",
+                "v1",
+                "{{exhaustNotificationId}}",
+                "control",
+                "retry"
+              ],
+              "raw": "{{base_url}}/notification-dispatch/v1/{{exhaustNotificationId}}/control/retry"
+            }
+          }
+        }
+      ],
+      "name": "02. Negative Tests & Boundary Validation"
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8089"
+    }
+  ]
+}
