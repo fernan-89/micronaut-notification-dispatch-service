@@ -54,7 +54,7 @@ class NotificationMongoRepositoryAdapterTest {
         when(mongoClient.getDatabase("thinklab_notification_db")).thenReturn(mongoDatabase);
         when(mongoDatabase.getCollection("notifications", NotificationDocument.class)).thenReturn(mongoCollection);
         when(mongoCollection.withCodecRegistry(any())).thenReturn(mongoCollection);
-        adapter = new NotificationMongoRepositoryAdapter(mongoClient);
+        adapter = new NotificationMongoRepositoryAdapter(mongoClient, "mongodb://localhost:27017/thinklab_notification_db");
 
         organisationId = UUID.randomUUID();
         notificationId = UUID.randomUUID();

@@ -5,6 +5,7 @@ import com.thinklab.application.dto.request.InitiateNotificationRequest;
 import com.thinklab.application.dto.response.NotificationResponse;
 import com.thinklab.application.usecase.DispatchNotificationUseCase;
 import com.thinklab.application.usecase.InitiateNotificationUseCase;
+import com.thinklab.domain.repository.ProcessedEventRepository;
 import io.micronaut.serde.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,7 +22,9 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,12 +33,13 @@ class UserInitiatedEventHandlerTest {
     @Mock private ObjectMapper objectMapper;
     @Mock private InitiateNotificationUseCase initiateNotificationUseCase;
     @Mock private DispatchNotificationUseCase dispatchNotificationUseCase;
+    @Mock private ProcessedEventRepository processedEvents;
 
     private UserInitiatedEventHandler handler;
 
     @BeforeEach
     void setUp() {
-        handler = new UserInitiatedEventHandler(objectMapper, initiateNotificationUseCase, dispatchNotificationUseCase);
+        handler = new UserInitiatedEventHandler(objectMapper, initiateNotificationUseCase, dispatchNotificationUseCase, processedEvents);
     }
 
     @Test
@@ -50,10 +54,26 @@ class UserInitiatedEventHandlerTest {
         when(objectMapper.readValue(eq("payload"), eq(UserInitiatedEventPayload.class))).thenReturn(event);
         when(initiateNotificationUseCase.execute(eq(organisationId), any(InitiateNotificationRequest.class))).thenReturn(Mono.just(response));
         when(dispatchNotificationUseCase.execute(notificationId)).thenReturn(Mono.empty());
+        when(processedEvents.isProcessed("user.initiated:" + event.id())).thenReturn(Mono.just(false));
+        when(processedEvents.markProcessed("user.initiated:" + event.id())).thenReturn(Mono.empty());
 
         StepVerifier.create(handler.handle("payload")).verifyComplete();
 
         verify(dispatchNotificationUseCase).execute(notificationId);
+        verify(processedEvents).markProcessed("user.initiated:" + event.id());
+    }
+
+    @Test
+    @DisplayName("a redelivered event that was already handled is acknowledged without a second notification")
+    void handleDuplicate() throws Exception {
+        UserInitiatedEventPayload event = new UserInitiatedEventPayload(UUID.randomUUID(), UUID.randomUUID(), "ada@thinklab.com", "Ada", Instant.now());
+        when(objectMapper.readValue(eq("payload"), eq(UserInitiatedEventPayload.class))).thenReturn(event);
+        when(processedEvents.isProcessed("user.initiated:" + event.id())).thenReturn(Mono.just(true));
+
+        StepVerifier.create(handler.handle("payload")).verifyComplete();
+
+        verifyNoInteractions(initiateNotificationUseCase, dispatchNotificationUseCase);
+        verify(processedEvents, never()).markProcessed(any());
     }
 
     @Test
@@ -70,13 +90,18 @@ class UserInitiatedEventHandlerTest {
         UserInitiatedEventPayload event = new UserInitiatedEventPayload(UUID.randomUUID(), UUID.randomUUID(), "ada@thinklab.com", "Ada", Instant.now());
         when(objectMapper.readValue(eq("payload"), eq(UserInitiatedEventPayload.class))).thenReturn(event);
         when(initiateNotificationUseCase.execute(any(), any())).thenReturn(Mono.error(new IllegalStateException("hash down")));
+        when(processedEvents.isProcessed(any())).thenReturn(Mono.just(false));
 
         StepVerifier.create(handler.handle("payload")).expectError(IllegalStateException.class).verify();
+        // Not recorded: the redelivery must get another chance.
+        verify(processedEvents, never()).markProcessed(any());
     }
 
     @Test
-    @DisplayName("payloadJson is null-checked")
+    @DisplayName("payloadJson and the inbox are null-checked")
     void nullGuard() {
+        assertThrows(NullPointerException.class,
+                () -> new UserInitiatedEventHandler(objectMapper, initiateNotificationUseCase, dispatchNotificationUseCase, null));
         assertThrows(NullPointerException.class, () -> handler.handle(null));
     }
 }
