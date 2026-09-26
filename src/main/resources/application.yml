@@ -117,7 +117,7 @@ endpoints:
 #  */
 # ----------------------------------------------------------------------------------------------
 mongodb:
-  uri: ${MONGODB_URI:`mongodb://localhost:27017/thinklab_notification_dispatch_db`}
+  uri: ${MONGODB_URI:`mongodb://localhost:27017/thinklab_notification_db`}
   uuid-representation: STANDARD
   cluster:
     server-selection-timeout: 5000ms

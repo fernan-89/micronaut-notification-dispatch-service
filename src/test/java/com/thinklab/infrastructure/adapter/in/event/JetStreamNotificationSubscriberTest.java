@@ -2,6 +2,7 @@ package com.thinklab.infrastructure.adapter.in.event;
 
 import com.thinklab.kit.events.EventsProperties;
 import io.micronaut.context.event.StartupEvent;
+import io.micronaut.scheduling.TaskScheduler;
 import io.nats.client.Connection;
 import io.nats.client.ConsumerContext;
 import io.nats.client.Message;
@@ -20,8 +21,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,6 +37,7 @@ class JetStreamNotificationSubscriberTest {
     @Mock private MessageConsumer messageConsumer;
     @Mock private UserInitiatedEventHandler eventHandler;
     @Mock private StartupEvent startupEvent;
+    @Mock private TaskScheduler scheduler;
 
     private final EventsProperties properties = new EventsProperties();
 
@@ -50,17 +54,45 @@ class JetStreamNotificationSubscriberTest {
         when(streamContext.createOrUpdateConsumer(any(ConsumerConfiguration.class))).thenReturn(consumerContext);
         when(consumerContext.consume(any(MessageHandler.class))).thenReturn(messageConsumer);
 
-        new JetStreamNotificationSubscriber(connection, properties, eventHandler).onApplicationEvent(startupEvent);
+        new JetStreamNotificationSubscriber(connection, properties, eventHandler, scheduler).onApplicationEvent(startupEvent);
 
         verify(consumerContext).consume(any(MessageHandler.class));
     }
 
     @Test
-    @DisplayName("a connectivity failure at startup is contained, never propagated")
-    void connectivityFailureIsContained() throws Exception {
-        when(connection.getStreamContext("THINKLAB_EVENTS")).thenThrow(new java.io.IOException("broker down"));
+    @DisplayName("a failed subscription at startup is contained and retried until it succeeds")
+    void failedSubscriptionIsRetried() throws Exception {
+        when(connection.getStreamContext("THINKLAB_EVENTS"))
+                .thenThrow(new java.io.IOException("stream not found"))
+                .thenReturn(streamContext);
+        when(streamContext.createOrUpdateConsumer(any(ConsumerConfiguration.class))).thenReturn(consumerContext);
+        when(consumerContext.consume(any(MessageHandler.class))).thenReturn(messageConsumer);
+        ArgumentCaptor<Runnable> retry = ArgumentCaptor.forClass(Runnable.class);
 
-        new JetStreamNotificationSubscriber(connection, properties, eventHandler).onApplicationEvent(startupEvent);
+        new JetStreamNotificationSubscriber(connection, properties, eventHandler, scheduler).onApplicationEvent(startupEvent);
+
+        verify(scheduler).schedule(eq(JetStreamNotificationSubscriber.RETRY_DELAY), retry.capture());
+        verify(consumerContext, never()).consume(any(MessageHandler.class));
+
+        retry.getValue().run();
+
+        verify(consumerContext).consume(any(MessageHandler.class));
+        verify(scheduler, times(1)).schedule(any(java.time.Duration.class), any(Runnable.class));
+    }
+
+    @Test
+    @DisplayName("a pending retry does nothing once the subscriber has been shut down")
+    void noRetryAfterShutdown() throws Exception {
+        when(connection.getStreamContext("THINKLAB_EVENTS")).thenThrow(new java.io.IOException("broker down"));
+        ArgumentCaptor<Runnable> retry = ArgumentCaptor.forClass(Runnable.class);
+        JetStreamNotificationSubscriber subscriber = new JetStreamNotificationSubscriber(connection, properties, eventHandler, scheduler);
+
+        subscriber.onApplicationEvent(startupEvent);
+        verify(scheduler).schedule(eq(JetStreamNotificationSubscriber.RETRY_DELAY), retry.capture());
+        subscriber.shutdown();
+        retry.getValue().run();
+
+        verify(connection, times(1)).getStreamContext("THINKLAB_EVENTS");
     }
 
     @Test
@@ -118,12 +150,13 @@ class JetStreamNotificationSubscriberTest {
     @Test
     @DisplayName("shutdown stops the consumer only if one was created")
     void shutdownStopsConsumerWhenPresent() throws Exception {
-        JetStreamNotificationSubscriber subscriber = new JetStreamNotificationSubscriber(connection, properties, eventHandler);
-        subscriber.shutdown();
+        new JetStreamNotificationSubscriber(connection, properties, eventHandler, scheduler).shutdown();
+        verify(messageConsumer, never()).stop();
 
         when(connection.getStreamContext("THINKLAB_EVENTS")).thenReturn(streamContext);
         when(streamContext.createOrUpdateConsumer(any(ConsumerConfiguration.class))).thenReturn(consumerContext);
         when(consumerContext.consume(any(MessageHandler.class))).thenReturn(messageConsumer);
+        JetStreamNotificationSubscriber subscriber = new JetStreamNotificationSubscriber(connection, properties, eventHandler, scheduler);
         subscriber.onApplicationEvent(startupEvent);
 
         subscriber.shutdown();
@@ -134,11 +167,12 @@ class JetStreamNotificationSubscriberTest {
     @Test
     @DisplayName("mandatory collaborators and the startup event are null-checked")
     void nullGuards() {
-        assertThrows(NullPointerException.class, () -> new JetStreamNotificationSubscriber(null, properties, eventHandler));
-        assertThrows(NullPointerException.class, () -> new JetStreamNotificationSubscriber(connection, null, eventHandler));
-        assertThrows(NullPointerException.class, () -> new JetStreamNotificationSubscriber(connection, properties, null));
+        assertThrows(NullPointerException.class, () -> new JetStreamNotificationSubscriber(null, properties, eventHandler, scheduler));
+        assertThrows(NullPointerException.class, () -> new JetStreamNotificationSubscriber(connection, null, eventHandler, scheduler));
+        assertThrows(NullPointerException.class, () -> new JetStreamNotificationSubscriber(connection, properties, null, scheduler));
+        assertThrows(NullPointerException.class, () -> new JetStreamNotificationSubscriber(connection, properties, eventHandler, null));
         assertThrows(NullPointerException.class,
-                () -> new JetStreamNotificationSubscriber(connection, properties, eventHandler).onApplicationEvent(null));
+                () -> new JetStreamNotificationSubscriber(connection, properties, eventHandler, scheduler).onApplicationEvent(null));
     }
 
     private MessageHandler subscribeAndCaptureHandler() throws Exception {
@@ -147,7 +181,7 @@ class JetStreamNotificationSubscriberTest {
         ArgumentCaptor<MessageHandler> captor = ArgumentCaptor.forClass(MessageHandler.class);
         when(consumerContext.consume(captor.capture())).thenReturn(messageConsumer);
 
-        new JetStreamNotificationSubscriber(connection, properties, eventHandler).onApplicationEvent(startupEvent);
+        new JetStreamNotificationSubscriber(connection, properties, eventHandler, scheduler).onApplicationEvent(startupEvent);
 
         return captor.getValue();
     }

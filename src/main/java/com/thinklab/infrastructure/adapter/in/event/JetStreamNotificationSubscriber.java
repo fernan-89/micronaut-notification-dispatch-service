@@ -4,6 +4,8 @@ import com.thinklab.kit.events.EventsProperties;
 import io.micronaut.context.annotation.Requires;
 import io.micronaut.context.event.ApplicationEventListener;
 import io.micronaut.context.event.StartupEvent;
+import io.micronaut.scheduling.TaskExecutors;
+import io.micronaut.scheduling.TaskScheduler;
 import io.nats.client.Connection;
 import io.nats.client.ConsumerContext;
 import io.nats.client.Message;
@@ -13,10 +15,12 @@ import io.nats.client.api.AckPolicy;
 import io.nats.client.api.ConsumerConfiguration;
 import jakarta.annotation.PreDestroy;
 import jakarta.inject.Inject;
+import jakarta.inject.Named;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.Objects;
 
 /**
@@ -28,6 +32,11 @@ import java.util.Objects;
  * <p><b>No dead-letter subject in v1 (kit ADR-003, ADR-024):</b> a message that keeps failing past
  * {@link #MAX_DELIVER} attempts is terminated with {@link Message#term()} — logged, never redelivered,
  * never parked anywhere for later inspection.
+ *
+ * <p><b>Subscription retry:</b> the stream is created by the kit's {@code NatsStreamInitializer}, another
+ * startup listener with no ordering guarantee relative to this one, and the broker itself may not be up yet.
+ * A failed subscription is therefore retried every {@link #RETRY_DELAY} until it succeeds or the bean is
+ * shut down, instead of leaving event-driven notifications off until the next restart.
  */
 @Singleton
 @Requires(property = "thinklab.events.enabled", value = "true")
@@ -36,22 +45,34 @@ public class JetStreamNotificationSubscriber implements ApplicationEventListener
     private static final Logger log = LoggerFactory.getLogger(JetStreamNotificationSubscriber.class);
     private static final String CONSUMER_NAME = "notification-dispatch-worker";
     private static final long MAX_DELIVER = 5;
+    static final Duration RETRY_DELAY = Duration.ofSeconds(2);
 
     private final Connection connection;
     private final EventsProperties properties;
     private final UserInitiatedEventHandler eventHandler;
-    private MessageConsumer messageConsumer;
+    private final TaskScheduler scheduler;
+    private volatile MessageConsumer messageConsumer;
+    private volatile boolean stopped;
 
     @Inject
-    public JetStreamNotificationSubscriber(Connection connection, EventsProperties properties, UserInitiatedEventHandler eventHandler) {
+    public JetStreamNotificationSubscriber(Connection connection, EventsProperties properties, UserInitiatedEventHandler eventHandler,
+                                           @Named(TaskExecutors.SCHEDULED) TaskScheduler scheduler) {
         this.connection = Objects.requireNonNull(connection, "Infrastructure constraint violated: Connection cannot be null.");
         this.properties = Objects.requireNonNull(properties, "Infrastructure constraint violated: EventsProperties cannot be null.");
         this.eventHandler = Objects.requireNonNull(eventHandler, "Infrastructure constraint violated: UserInitiatedEventHandler cannot be null.");
+        this.scheduler = Objects.requireNonNull(scheduler, "Infrastructure constraint violated: TaskScheduler cannot be null.");
     }
 
     @Override
     public void onApplicationEvent(StartupEvent event) {
         Objects.requireNonNull(event, "Application constraint violated: StartupEvent cannot be null.");
+        subscribe();
+    }
+
+    void subscribe() {
+        if (stopped) {
+            return;
+        }
         try {
             String subject = properties.getSubjectPrefix() + ".party-authentication.user.initiated";
             StreamContext streamContext = connection.getStreamContext(properties.getStreamName());
@@ -64,7 +85,9 @@ public class JetStreamNotificationSubscriber implements ApplicationEventListener
             this.messageConsumer = consumerContext.consume(this::onMessage);
             log.info("[EVENTS] Subscribed durable consumer [{}] to subject [{}]", CONSUMER_NAME, subject);
         } catch (Exception e) {
-            log.error("[EVENTS] Could not subscribe to the event backbone; notifications triggered by events stay degraded until it recovers. Reason: {}", e.getMessage());
+            log.warn("[EVENTS] Could not subscribe to the event backbone, retrying in {}s; notifications triggered by events are degraded until then. Reason: {}",
+                    RETRY_DELAY.toSeconds(), e.getMessage());
+            scheduler.schedule(RETRY_DELAY, this::subscribe);
         }
     }
 
@@ -87,6 +110,7 @@ public class JetStreamNotificationSubscriber implements ApplicationEventListener
 
     @PreDestroy
     void shutdown() {
+        stopped = true;
         if (messageConsumer != null) {
             messageConsumer.stop();
         }
