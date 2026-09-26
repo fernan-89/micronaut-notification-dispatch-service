@@ -1,10 +1,12 @@
 package com.thinklab.infrastructure.adapter.out.persistence.repository;
 
+import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Updates;
 import com.mongodb.reactivestreams.client.MongoClient;
 import com.mongodb.reactivestreams.client.MongoCollection;
+import io.micronaut.context.annotation.Property;
 import com.thinklab.domain.exception.NotificationNotFoundException;
 import com.thinklab.domain.model.Notification;
 import com.thinklab.domain.model.Notification.NotificationStatus;
@@ -24,6 +26,7 @@ import reactor.core.publisher.Mono;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -34,8 +37,8 @@ import java.util.UUID;
 public class NotificationMongoRepositoryAdapter implements NotificationRepository {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationMongoRepositoryAdapter.class);
-
-    static final String DATABASE_NAME = "thinklab_notification_db";
+    /** Used only when {@code mongodb.uri} names no database. */
+    static final String DEFAULT_DATABASE = "thinklab_notification_db";
     static final String COLLECTION_NAME = "notifications";
     private static final String FIELD_ID = "_id";
 
@@ -52,12 +55,21 @@ public class NotificationMongoRepositoryAdapter implements NotificationRepositor
 
     private final MongoClient mongoClient;
 
-    public NotificationMongoRepositoryAdapter(MongoClient mongoClient) {
+    private final String database;
+
+    /**
+     * The database comes from {@code mongodb.uri}, the same property the MongoDB client and the kit's
+     * warm-up use. It used to be hardcoded, so pointing {@code MONGODB_URI} at another database moved
+     * everything except this adapter's reads and writes.
+     */
+    public NotificationMongoRepositoryAdapter(MongoClient mongoClient, @Property(name = "mongodb.uri") String mongoUri) {
         this.mongoClient = mongoClient;
+        String configured = new ConnectionString(Objects.requireNonNull(mongoUri, "mongodb.uri cannot be null.")).getDatabase();
+        this.database = configured != null ? configured : DEFAULT_DATABASE;
     }
 
     private MongoCollection<NotificationDocument> getCollection() {
-        return mongoClient.getDatabase(DATABASE_NAME)
+        return mongoClient.getDatabase(database)
                 .getCollection(COLLECTION_NAME, NotificationDocument.class)
                 .withCodecRegistry(POJO_CODEC_REGISTRY);
     }

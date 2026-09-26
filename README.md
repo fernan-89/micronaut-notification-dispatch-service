@@ -132,6 +132,18 @@ conventions · 019 HTTP 409 for state conflicts · 023 Notification FSM and chan
 subscriber and idempotent consumption (durable pull consumer, at-least-once delivery, no dead-letter
 subject in v1).
 
+### Automated Tests
+
+```bash
+./gradlew test               # unit suite + 100% line/branch coverage gate (no Docker needed)
+./gradlew integrationTest    # Testcontainers suite against a real MongoDB replica set and NATS JetStream (needs Docker)
+./gradlew check              # both, as CI runs it
+```
+
+The integration suite (`src/integrationTest`, platform
+[ADR-025](https://github.com/fernan-89/micronaut-hash-token-registry-service/blob/master/docs/adr/025-integration-tests-with-testcontainers.md))
+runs the service against a real MongoDB replica set and NATS JetStream: a `user.initiated` event published to a fresh stream becomes one delivered welcome notification, a redelivered event does not produce a second one (at-least-once delivery, ADR-003), and the notification repository persists, filters and reports not-found correctly.
+
 ## License
 
 Licensed under the [PolyForm Strict License 1.0.0](LICENSE): you may read and use this software for noncommercial purposes only. Modifying it, creating derivative works, redistributing it and any commercial use are not permitted without a separate written license. This software is not open source.
