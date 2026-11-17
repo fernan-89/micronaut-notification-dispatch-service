@@ -75,9 +75,9 @@ class NotificationUseCasesTest {
     @Test
     @DisplayName("Retrieve: maps the found aggregate to a response")
     void retrieveFound() {
-        when(notificationRepository.findById(id)).thenReturn(Mono.just(notification));
+        when(notificationRepository.findById(id, organisationId)).thenReturn(Mono.just(notification));
 
-        StepVerifier.create(new RetrieveNotificationUseCase(notificationRepository).execute(id))
+        StepVerifier.create(new RetrieveNotificationUseCase(notificationRepository).execute(id, organisationId))
                 .assertNext(res -> assertEquals(id, res.id()))
                 .verifyComplete();
     }
@@ -85,9 +85,9 @@ class NotificationUseCasesTest {
     @Test
     @DisplayName("Retrieve: an unknown ID is 404")
     void retrieveNotFound() {
-        when(notificationRepository.findById(id)).thenReturn(Mono.empty());
+        when(notificationRepository.findById(id, organisationId)).thenReturn(Mono.empty());
 
-        StepVerifier.create(new RetrieveNotificationUseCase(notificationRepository).execute(id))
+        StepVerifier.create(new RetrieveNotificationUseCase(notificationRepository).execute(id, organisationId))
                 .expectError(NotificationNotFoundException.class)
                 .verify();
     }
@@ -110,10 +110,10 @@ class NotificationUseCasesTest {
     @Test
     @DisplayName("Control: SEND drives the matching persistence update")
     void controlSend() {
-        when(notificationRepository.findById(id)).thenReturn(Mono.just(notification));
+        when(notificationRepository.findById(id, organisationId)).thenReturn(Mono.just(notification));
         when(notificationRepository.updateStatus(eq(id), eq(NotificationStatus.PENDING), eq(0), eq(NotificationStatus.SENDING), eq(0), eq(null))).thenReturn(Mono.empty());
 
-        StepVerifier.create(new ControlNotificationUseCase(notificationRepository).execute(id, ControlNotificationUseCase.Action.SEND, "exec"))
+        StepVerifier.create(new ControlNotificationUseCase(notificationRepository).execute(id, organisationId, ControlNotificationUseCase.Action.SEND, "exec"))
                 .verifyComplete();
 
         verify(notificationRepository).updateStatus(id, NotificationStatus.PENDING, 0, NotificationStatus.SENDING, 0, null);
@@ -125,34 +125,34 @@ class NotificationUseCasesTest {
         // DELIVER
         Notification sending = Notification.createNew(id, organisationId, "r", "s", "b", NotificationChannel.LOG);
         sending.send("exec");
-        when(notificationRepository.findById(id)).thenReturn(Mono.just(sending));
+        when(notificationRepository.findById(id, organisationId)).thenReturn(Mono.just(sending));
         when(notificationRepository.updateStatus(eq(id), eq(NotificationStatus.SENDING), eq(0), eq(NotificationStatus.DELIVERED), eq(0), eq(null))).thenReturn(Mono.empty());
-        StepVerifier.create(new ControlNotificationUseCase(notificationRepository).execute(id, ControlNotificationUseCase.Action.DELIVER, "exec"))
+        StepVerifier.create(new ControlNotificationUseCase(notificationRepository).execute(id, organisationId, ControlNotificationUseCase.Action.DELIVER, "exec"))
                 .verifyComplete();
 
         // CANCEL
         Notification pending = Notification.createNew(id, organisationId, "r", "s", "b", NotificationChannel.LOG);
-        when(notificationRepository.findById(id)).thenReturn(Mono.just(pending));
+        when(notificationRepository.findById(id, organisationId)).thenReturn(Mono.just(pending));
         when(notificationRepository.updateStatus(eq(id), eq(NotificationStatus.PENDING), eq(0), eq(NotificationStatus.CANCELLED), eq(0), eq(null))).thenReturn(Mono.empty());
-        StepVerifier.create(new ControlNotificationUseCase(notificationRepository).execute(id, ControlNotificationUseCase.Action.CANCEL, "exec"))
+        StepVerifier.create(new ControlNotificationUseCase(notificationRepository).execute(id, organisationId, ControlNotificationUseCase.Action.CANCEL, "exec"))
                 .verifyComplete();
 
         // RETRY
         Notification failed = Notification.createNew(id, organisationId, "r", "s", "b", NotificationChannel.LOG);
         failed.send("exec");
         failed.fail("exec", "boom");
-        when(notificationRepository.findById(id)).thenReturn(Mono.just(failed));
+        when(notificationRepository.findById(id, organisationId)).thenReturn(Mono.just(failed));
         when(notificationRepository.updateStatus(eq(id), eq(NotificationStatus.FAILED), eq(0), eq(NotificationStatus.SENDING), eq(1), eq("boom"))).thenReturn(Mono.empty());
-        StepVerifier.create(new ControlNotificationUseCase(notificationRepository).execute(id, ControlNotificationUseCase.Action.RETRY, "exec"))
+        StepVerifier.create(new ControlNotificationUseCase(notificationRepository).execute(id, organisationId, ControlNotificationUseCase.Action.RETRY, "exec"))
                 .verifyComplete();
     }
 
     @Test
     @DisplayName("Control: 404 when the notification does not exist")
     void controlNotFound() {
-        when(notificationRepository.findById(id)).thenReturn(Mono.empty());
+        when(notificationRepository.findById(id, organisationId)).thenReturn(Mono.empty());
 
-        StepVerifier.create(new ControlNotificationUseCase(notificationRepository).execute(id, ControlNotificationUseCase.Action.SEND, "exec"))
+        StepVerifier.create(new ControlNotificationUseCase(notificationRepository).execute(id, organisationId, ControlNotificationUseCase.Action.SEND, "exec"))
                 .expectError(NotificationNotFoundException.class)
                 .verify();
 
@@ -162,9 +162,9 @@ class NotificationUseCasesTest {
     @Test
     @DisplayName("Control: an illegal move never reaches the repository update")
     void controlIllegalMove() {
-        when(notificationRepository.findById(id)).thenReturn(Mono.just(notification));
+        when(notificationRepository.findById(id, organisationId)).thenReturn(Mono.just(notification));
 
-        StepVerifier.create(new ControlNotificationUseCase(notificationRepository).execute(id, ControlNotificationUseCase.Action.DELIVER, "exec"))
+        StepVerifier.create(new ControlNotificationUseCase(notificationRepository).execute(id, organisationId, ControlNotificationUseCase.Action.DELIVER, "exec"))
                 .expectError(InvalidNotificationStatusException.class)
                 .verify();
 
@@ -177,10 +177,10 @@ class NotificationUseCasesTest {
     @DisplayName("Fail: records the error message and persists it")
     void fail() {
         notification.send("exec");
-        when(notificationRepository.findById(id)).thenReturn(Mono.just(notification));
+        when(notificationRepository.findById(id, organisationId)).thenReturn(Mono.just(notification));
         when(notificationRepository.updateStatus(id, NotificationStatus.SENDING, 0, NotificationStatus.FAILED, 0, "smtp down")).thenReturn(Mono.empty());
 
-        StepVerifier.create(new FailNotificationUseCase(notificationRepository).execute(id, "exec", "smtp down"))
+        StepVerifier.create(new FailNotificationUseCase(notificationRepository).execute(id, organisationId, "exec", "smtp down"))
                 .verifyComplete();
 
         verify(notificationRepository).updateStatus(id, NotificationStatus.SENDING, 0, NotificationStatus.FAILED, 0, "smtp down");
@@ -189,10 +189,24 @@ class NotificationUseCasesTest {
     @Test
     @DisplayName("Fail: 404 when the notification does not exist")
     void failNotFound() {
-        when(notificationRepository.findById(id)).thenReturn(Mono.empty());
+        when(notificationRepository.findById(id, organisationId)).thenReturn(Mono.empty());
 
-        StepVerifier.create(new FailNotificationUseCase(notificationRepository).execute(id, "exec", "boom"))
+        StepVerifier.create(new FailNotificationUseCase(notificationRepository).execute(id, organisationId, "exec", "boom"))
                 .expectError(NotificationNotFoundException.class)
                 .verify();
+    }
+
+    @Test
+    @DisplayName("every by-id lookup is made in the caller's tenant: another tenant's notification is the same as none and nothing is written")
+    void anotherTenantsNotification() {
+        UUID other = UUID.randomUUID();
+        when(notificationRepository.findById(id, other)).thenReturn(Mono.empty());
+
+        StepVerifier.create(new RetrieveNotificationUseCase(notificationRepository).execute(id, other)).expectError(NotificationNotFoundException.class).verify();
+        StepVerifier.create(new ControlNotificationUseCase(notificationRepository).execute(id, other, ControlNotificationUseCase.Action.CANCEL, "op-1")).expectError(NotificationNotFoundException.class).verify();
+        StepVerifier.create(new FailNotificationUseCase(notificationRepository).execute(id, other, "op-1", "boom")).expectError(NotificationNotFoundException.class).verify();
+        StepVerifier.create(new DispatchNotificationUseCase(notificationRepository, java.util.List.of()).execute(id, other)).expectError(NotificationNotFoundException.class).verify();
+
+        org.mockito.Mockito.verifyNoMoreInteractions(notificationRepository);
     }
 }

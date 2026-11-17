@@ -91,7 +91,7 @@ class NotificationMongoRepositoryAdapterTest {
         when(mongoCollection.find(any(Bson.class))).thenReturn(publisher);
         when(publisher.first()).thenReturn(Mono.just(NotificationPersistenceMapper.toDocument(notification)));
 
-        StepVerifier.create(adapter.findById(notificationId))
+        StepVerifier.create(adapter.findById(notificationId, UUID.randomUUID()))
                 .expectNextMatches(found -> found.getId().equals(notificationId) && found.getStatus() == NotificationStatus.PENDING)
                 .verifyComplete();
     }
@@ -103,7 +103,7 @@ class NotificationMongoRepositoryAdapterTest {
         when(mongoCollection.find(any(Bson.class))).thenReturn(publisher);
         when(publisher.first()).thenReturn(Mono.empty());
 
-        StepVerifier.create(adapter.findById(notificationId)).verifyComplete();
+        StepVerifier.create(adapter.findById(notificationId, UUID.randomUUID())).verifyComplete();
     }
 
     @Test

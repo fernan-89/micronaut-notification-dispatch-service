@@ -65,7 +65,7 @@ SENDING --retry (crash mitigation)--------> SENDING
 
 ## BIAN Behavior Qualifier Contract (`/notification-dispatch/v1`)
 
-`X-Tenant-Id` (Organisation UUID) is mandatory on `initiate` and the collection `retrieve`;
+`X-Tenant-Id` (Organisation UUID) is mandatory on every route (ADR-026: another tenant's notification is a 404);
 `X-Executor` is mandatory on every `control/*` action.
 
 | Behavior Qualifier | Method & Path |

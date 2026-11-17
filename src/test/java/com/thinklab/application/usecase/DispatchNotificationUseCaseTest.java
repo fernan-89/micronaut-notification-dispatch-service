@@ -46,13 +46,13 @@ class DispatchNotificationUseCaseTest {
     @DisplayName("A successful send transitions PENDING -> SENDING -> DELIVERED and persists both hops")
     void successfulDispatch() {
         when(logChannel.type()).thenReturn(NotificationChannel.LOG);
-        when(notificationRepository.findById(id)).thenReturn(Mono.just(notification));
+        when(notificationRepository.findById(id, organisationId)).thenReturn(Mono.just(notification));
         when(notificationRepository.updateStatus(eq(id), any(), anyInt(), any(), anyInt(), any())).thenReturn(Mono.empty());
         when(logChannel.send(notification)).thenReturn(Mono.empty());
 
         DispatchNotificationUseCase useCase = new DispatchNotificationUseCase(notificationRepository, List.of(logChannel));
 
-        StepVerifier.create(useCase.execute(id)).verifyComplete();
+        StepVerifier.create(useCase.execute(id, organisationId)).verifyComplete();
 
         assertEquals(NotificationStatus.DELIVERED, notification.getStatus());
     }
@@ -61,13 +61,13 @@ class DispatchNotificationUseCaseTest {
     @DisplayName("A channel failure marks the notification FAILED with the channel's error message, never propagating the error")
     void channelFailureMarksFailed() {
         when(logChannel.type()).thenReturn(NotificationChannel.LOG);
-        when(notificationRepository.findById(id)).thenReturn(Mono.just(notification));
+        when(notificationRepository.findById(id, organisationId)).thenReturn(Mono.just(notification));
         when(notificationRepository.updateStatus(eq(id), any(), anyInt(), any(), anyInt(), any())).thenReturn(Mono.empty());
         when(logChannel.send(notification)).thenReturn(Mono.error(new IllegalStateException("smtp down")));
 
         DispatchNotificationUseCase useCase = new DispatchNotificationUseCase(notificationRepository, List.of(logChannel));
 
-        StepVerifier.create(useCase.execute(id)).verifyComplete();
+        StepVerifier.create(useCase.execute(id, organisationId)).verifyComplete();
 
         assertEquals(NotificationStatus.FAILED, notification.getStatus());
         assertEquals("smtp down", notification.getLastError());
@@ -77,13 +77,13 @@ class DispatchNotificationUseCaseTest {
     @DisplayName("No channel registered for the requested type is treated the same as a channel failure")
     void noChannelRegisteredMarksFailed() {
         when(webhookChannel.type()).thenReturn(NotificationChannel.WEBHOOK);
-        when(notificationRepository.findById(id)).thenReturn(Mono.just(notification));
+        when(notificationRepository.findById(id, organisationId)).thenReturn(Mono.just(notification));
         when(notificationRepository.updateStatus(eq(id), any(), anyInt(), any(), anyInt(), any())).thenReturn(Mono.empty());
 
         // notification requests LOG but only a WEBHOOK channel bean exists
         DispatchNotificationUseCase useCase = new DispatchNotificationUseCase(notificationRepository, List.of(webhookChannel));
 
-        StepVerifier.create(useCase.execute(id)).verifyComplete();
+        StepVerifier.create(useCase.execute(id, organisationId)).verifyComplete();
 
         assertEquals(NotificationStatus.FAILED, notification.getStatus());
         assertEquals("No channel registered for [LOG].", notification.getLastError());
@@ -92,11 +92,11 @@ class DispatchNotificationUseCaseTest {
     @Test
     @DisplayName("404 when the notification does not exist")
     void notFound() {
-        when(notificationRepository.findById(id)).thenReturn(Mono.empty());
+        when(notificationRepository.findById(id, organisationId)).thenReturn(Mono.empty());
 
         DispatchNotificationUseCase useCase = new DispatchNotificationUseCase(notificationRepository, List.of(logChannel));
 
-        StepVerifier.create(useCase.execute(id))
+        StepVerifier.create(useCase.execute(id, organisationId))
                 .expectError(NotificationNotFoundException.class)
                 .verify();
     }

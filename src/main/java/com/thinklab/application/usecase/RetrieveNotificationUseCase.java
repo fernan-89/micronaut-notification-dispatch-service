@@ -19,8 +19,8 @@ public class RetrieveNotificationUseCase {
         this.notificationRepository = notificationRepository;
     }
 
-    public Mono<NotificationResponse> execute(UUID id) {
-        return notificationRepository.findById(id)
+    public Mono<NotificationResponse> execute(UUID id, UUID organisationId) {
+        return notificationRepository.findById(id, organisationId)
                 .switchIfEmpty(Mono.error(new NotificationNotFoundException(id)))
                 .map(NotificationMapper::toResponse);
     }
