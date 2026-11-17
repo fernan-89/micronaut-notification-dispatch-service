@@ -146,7 +146,35 @@ class NotificationMongoRepositoryAdapterTest {
         when(mongoCollection.updateOne(any(Bson.class), any(Bson.class)))
                 .thenReturn(Mono.just(UpdateResult.acknowledged(1, 1L, null)));
 
-        StepVerifier.create(adapter.updateStatus(notificationId, NotificationStatus.FAILED, 1, "boom")).verifyComplete();
+        StepVerifier.create(adapter.updateStatus(notificationId, NotificationStatus.SENDING, 0, NotificationStatus.FAILED, 1, "boom")).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("updateStatus writes only if the notification is still in the status and attempts that were read")
+    void updateStatusIsGuarded() {
+        org.mockito.ArgumentCaptor<Bson> filter = org.mockito.ArgumentCaptor.forClass(Bson.class);
+        when(mongoCollection.updateOne(filter.capture(), any(Bson.class)))
+                .thenReturn(Mono.just(UpdateResult.acknowledged(1, 1L, null)));
+
+        StepVerifier.create(adapter.updateStatus(notificationId, NotificationStatus.SENDING, 2, NotificationStatus.FAILED, 2, "boom")).verifyComplete();
+
+        String json = filter.getValue().toBsonDocument(org.bson.Document.class,
+                org.bson.codecs.configuration.CodecRegistries.fromRegistries(
+                        org.bson.codecs.configuration.CodecRegistries.fromCodecs(new org.bson.codecs.UuidCodec(org.bson.UuidRepresentation.STANDARD)),
+                        com.mongodb.MongoClientSettings.getDefaultCodecRegistry())).toJson();
+        org.junit.jupiter.api.Assertions.assertTrue(json.contains("\"status\": \"SENDING\"") && json.contains("\"attempts\": 2"), json);
+    }
+
+    @Test
+    @DisplayName("updateStatus maps a miss on an existing notification to a conflict")
+    void updateStatusConflict() {
+        when(mongoCollection.updateOne(any(Bson.class), any(Bson.class)))
+                .thenReturn(Mono.just(UpdateResult.acknowledged(0, 0L, null)));
+        when(mongoCollection.countDocuments(any(Bson.class))).thenReturn(Mono.just(1L));
+
+        StepVerifier.create(adapter.updateStatus(notificationId, NotificationStatus.PENDING, 0, NotificationStatus.CANCELLED, 0, null))
+                .expectError(com.thinklab.domain.exception.InvalidNotificationStatusException.class)
+                .verify();
     }
 
     @Test
@@ -154,8 +182,9 @@ class NotificationMongoRepositoryAdapterTest {
     void updateStatusNotFound() {
         when(mongoCollection.updateOne(any(Bson.class), any(Bson.class)))
                 .thenReturn(Mono.just(UpdateResult.acknowledged(0, 0L, null)));
+        when(mongoCollection.countDocuments(any(Bson.class))).thenReturn(Mono.just(0L));
 
-        StepVerifier.create(adapter.updateStatus(notificationId, NotificationStatus.FAILED, 1, "boom"))
+        StepVerifier.create(adapter.updateStatus(notificationId, NotificationStatus.SENDING, 0, NotificationStatus.FAILED, 1, "boom"))
                 .expectError(NotificationNotFoundException.class)
                 .verify();
     }

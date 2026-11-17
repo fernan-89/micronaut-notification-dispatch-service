@@ -47,7 +47,7 @@ class DispatchNotificationUseCaseTest {
     void successfulDispatch() {
         when(logChannel.type()).thenReturn(NotificationChannel.LOG);
         when(notificationRepository.findById(id)).thenReturn(Mono.just(notification));
-        when(notificationRepository.updateStatus(eq(id), any(), anyInt(), any())).thenReturn(Mono.empty());
+        when(notificationRepository.updateStatus(eq(id), any(), anyInt(), any(), anyInt(), any())).thenReturn(Mono.empty());
         when(logChannel.send(notification)).thenReturn(Mono.empty());
 
         DispatchNotificationUseCase useCase = new DispatchNotificationUseCase(notificationRepository, List.of(logChannel));
@@ -62,7 +62,7 @@ class DispatchNotificationUseCaseTest {
     void channelFailureMarksFailed() {
         when(logChannel.type()).thenReturn(NotificationChannel.LOG);
         when(notificationRepository.findById(id)).thenReturn(Mono.just(notification));
-        when(notificationRepository.updateStatus(eq(id), any(), anyInt(), any())).thenReturn(Mono.empty());
+        when(notificationRepository.updateStatus(eq(id), any(), anyInt(), any(), anyInt(), any())).thenReturn(Mono.empty());
         when(logChannel.send(notification)).thenReturn(Mono.error(new IllegalStateException("smtp down")));
 
         DispatchNotificationUseCase useCase = new DispatchNotificationUseCase(notificationRepository, List.of(logChannel));
@@ -78,7 +78,7 @@ class DispatchNotificationUseCaseTest {
     void noChannelRegisteredMarksFailed() {
         when(webhookChannel.type()).thenReturn(NotificationChannel.WEBHOOK);
         when(notificationRepository.findById(id)).thenReturn(Mono.just(notification));
-        when(notificationRepository.updateStatus(eq(id), any(), anyInt(), any())).thenReturn(Mono.empty());
+        when(notificationRepository.updateStatus(eq(id), any(), anyInt(), any(), anyInt(), any())).thenReturn(Mono.empty());
 
         // notification requests LOG but only a WEBHOOK channel bean exists
         DispatchNotificationUseCase useCase = new DispatchNotificationUseCase(notificationRepository, List.of(webhookChannel));

@@ -2,6 +2,7 @@ package com.thinklab.application.usecase;
 
 import com.thinklab.domain.exception.NotificationNotFoundException;
 import com.thinklab.domain.model.Notification;
+import com.thinklab.domain.model.Notification.NotificationStatus;
 import com.thinklab.domain.port.NotificationChannelPort;
 import com.thinklab.domain.repository.NotificationRepository;
 import jakarta.inject.Singleton;
@@ -38,23 +39,31 @@ public class DispatchNotificationUseCase {
         return notificationRepository.findById(id)
                 .switchIfEmpty(Mono.error(new NotificationNotFoundException(id)))
                 .flatMap(notification -> {
+                    NotificationStatus statusRead = notification.getStatus();
+                    int attemptsRead = notification.getAttempts();
                     notification.send(SYSTEM_EXECUTOR);
-                    return notificationRepository.updateStatus(id, notification.getStatus(),
+                    // The reservation is outside the error handler: losing it means another request took this
+                    // notification, so nothing is sent and nothing is marked failed.
+                    return notificationRepository.updateStatus(id, statusRead, attemptsRead, notification.getStatus(),
                                     notification.getAttempts(), notification.getLastError())
-                            .then(Mono.defer(() -> resolveChannel(notification.getChannel()).send(notification)))
-                            .then(Mono.defer(() -> markDelivered(id, notification)))
-                            .onErrorResume(e -> markFailed(id, notification, e.getMessage()));
+                            .then(Mono.defer(() -> resolveChannel(notification.getChannel()).send(notification))
+                                    .then(Mono.defer(() -> markDelivered(id, notification)))
+                                    .onErrorResume(e -> markFailed(id, notification, e.getMessage())));
                 });
     }
 
     private Mono<Void> markDelivered(UUID id, Notification notification) {
+        NotificationStatus statusRead = notification.getStatus();
         notification.deliver(SYSTEM_EXECUTOR);
-        return notificationRepository.updateStatus(id, notification.getStatus(), notification.getAttempts(), notification.getLastError());
+        return notificationRepository.updateStatus(id, statusRead, notification.getAttempts(), notification.getStatus(),
+                notification.getAttempts(), notification.getLastError());
     }
 
     private Mono<Void> markFailed(UUID id, Notification notification, String errorMessage) {
+        NotificationStatus statusRead = notification.getStatus();
         notification.fail(SYSTEM_EXECUTOR, errorMessage);
-        return notificationRepository.updateStatus(id, notification.getStatus(), notification.getAttempts(), notification.getLastError());
+        return notificationRepository.updateStatus(id, statusRead, notification.getAttempts(), notification.getStatus(),
+                notification.getAttempts(), notification.getLastError());
     }
 
     private NotificationChannelPort resolveChannel(Notification.NotificationChannel type) {
