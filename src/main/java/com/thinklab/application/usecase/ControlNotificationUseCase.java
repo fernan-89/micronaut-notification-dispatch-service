@@ -2,6 +2,7 @@ package com.thinklab.application.usecase;
 
 import com.thinklab.domain.exception.NotificationNotFoundException;
 import com.thinklab.domain.model.Notification;
+import com.thinklab.domain.model.Notification.NotificationStatus;
 import com.thinklab.domain.repository.NotificationRepository;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
@@ -36,8 +37,10 @@ public class ControlNotificationUseCase {
         return notificationRepository.findById(id)
                 .switchIfEmpty(Mono.error(new NotificationNotFoundException(id)))
                 .flatMap(notification -> {
+                    NotificationStatus statusRead = notification.getStatus();
+                    int attemptsRead = notification.getAttempts();
                     action.apply(notification, executor);
-                    return notificationRepository.updateStatus(id, notification.getStatus(),
+                    return notificationRepository.updateStatus(id, statusRead, attemptsRead, notification.getStatus(),
                             notification.getAttempts(), notification.getLastError());
                 });
     }

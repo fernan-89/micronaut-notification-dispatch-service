@@ -7,6 +7,7 @@ import com.mongodb.client.model.Updates;
 import com.mongodb.reactivestreams.client.MongoClient;
 import com.mongodb.reactivestreams.client.MongoCollection;
 import io.micronaut.context.annotation.Property;
+import com.thinklab.domain.exception.InvalidNotificationStatusException;
 import com.thinklab.domain.exception.NotificationNotFoundException;
 import com.thinklab.domain.model.Notification;
 import com.thinklab.domain.model.Notification.NotificationStatus;
@@ -108,7 +109,8 @@ public class NotificationMongoRepositoryAdapter implements NotificationRepositor
     }
 
     @Override
-    public Mono<Void> updateStatus(UUID id, NotificationStatus status, int attempts, String lastError) {
+    public Mono<Void> updateStatus(UUID id, NotificationStatus expectedStatus, int expectedAttempts,
+                                   NotificationStatus status, int attempts, String lastError) {
         log.debug("[PERSISTENCE] Partial Mutation: updateStatus for ID: {}", id);
 
         Bson update = Updates.combine(
@@ -118,12 +120,19 @@ public class NotificationMongoRepositoryAdapter implements NotificationRepositor
                 Updates.set("updatedAt", Instant.now())
         );
 
-        return Mono.from(getCollection().updateOne(Filters.eq(FIELD_ID, id), update))
+        Bson guard = Filters.and(Filters.eq(FIELD_ID, id), Filters.eq("status", expectedStatus.name()),
+                Filters.eq("attempts", expectedAttempts));
+        return Mono.from(getCollection().updateOne(guard, update))
                 .flatMap(result -> {
-                    if (result.getMatchedCount() == 0) {
-                        return Mono.error(new NotificationNotFoundException(id));
+                    if (result.getMatchedCount() > 0) {
+                        return Mono.<Void>empty();
                     }
-                    return Mono.empty();
+                    // Nothing matched: either there is no such notification or it changed since it was read.
+                    return Mono.from(getCollection().countDocuments(Filters.eq(FIELD_ID, id)))
+                            .flatMap(count -> count == 0
+                                    ? Mono.<Void>error(new NotificationNotFoundException(id))
+                                    : Mono.<Void>error(new InvalidNotificationStatusException(
+                                            "The notification changed while it was being processed; read it again and retry.")));
                 });
     }
 }

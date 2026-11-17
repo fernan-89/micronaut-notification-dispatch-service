@@ -130,7 +130,8 @@ docker build -t thinklab-notification-dispatch-service:latest .
 conventions · 019 HTTP 409 for state conflicts · 023 Notification FSM and channels (no audit trail,
 `retry` from `FAILED`/`SENDING`, webhook-not-configured treated as a channel failure) · 024 JetStream
 subscriber and idempotent consumption (durable pull consumer, at-least-once delivery, no dead-letter
-subject in v1).
+subject in v1) · 025 guarded status writes and a dispatch reservation (a stale write is a 409; a dispatch
+reserves the notification before it calls the channel).
 
 ### Automated Tests
 
