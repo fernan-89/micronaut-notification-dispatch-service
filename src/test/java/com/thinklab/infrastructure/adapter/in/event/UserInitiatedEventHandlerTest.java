@@ -53,13 +53,13 @@ class UserInitiatedEventHandlerTest {
 
         when(objectMapper.readValue(eq("payload"), eq(UserInitiatedEventPayload.class))).thenReturn(event);
         when(initiateNotificationUseCase.execute(eq(organisationId), any(InitiateNotificationRequest.class))).thenReturn(Mono.just(response));
-        when(dispatchNotificationUseCase.execute(notificationId)).thenReturn(Mono.empty());
+        when(dispatchNotificationUseCase.execute(notificationId, organisationId)).thenReturn(Mono.empty());
         when(processedEvents.isProcessed("user.initiated:" + event.id())).thenReturn(Mono.just(false));
         when(processedEvents.markProcessed("user.initiated:" + event.id())).thenReturn(Mono.empty());
 
         StepVerifier.create(handler.handle("payload")).verifyComplete();
 
-        verify(dispatchNotificationUseCase).execute(notificationId);
+        verify(dispatchNotificationUseCase).execute(notificationId, organisationId);
         verify(processedEvents).markProcessed("user.initiated:" + event.id());
     }
 

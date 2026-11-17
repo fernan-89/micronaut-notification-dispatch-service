@@ -73,6 +73,6 @@ public class UserInitiatedEventHandler {
         );
 
         return initiateNotificationUseCase.execute(event.organisationId(), request)
-                .flatMap(response -> dispatchNotificationUseCase.execute(response.id()));
+                .flatMap(response -> dispatchNotificationUseCase.execute(response.id(), event.organisationId()));
     }
 }

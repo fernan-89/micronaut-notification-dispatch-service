@@ -31,10 +31,10 @@ public class ControlNotificationUseCase {
         this.notificationRepository = notificationRepository;
     }
 
-    public Mono<Void> execute(UUID id, Action action, String executor) {
+    public Mono<Void> execute(UUID id, UUID organisationId, Action action, String executor) {
         log.info("[USE CASE] Controlling notification lifecycle: {} for ID: {}", action, id);
 
-        return notificationRepository.findById(id)
+        return notificationRepository.findById(id, organisationId)
                 .switchIfEmpty(Mono.error(new NotificationNotFoundException(id)))
                 .flatMap(notification -> {
                     NotificationStatus statusRead = notification.getStatus();

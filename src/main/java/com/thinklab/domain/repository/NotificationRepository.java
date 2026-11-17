@@ -23,7 +23,7 @@ public interface NotificationRepository {
 
     Mono<Notification> create(Notification notification);
 
-    Mono<Notification> findById(UUID id);
+    Mono<Notification> findById(UUID id, UUID organisationId);
 
     /**
      * Tenant-scoped listing of Notifications belonging to a given Organisation.

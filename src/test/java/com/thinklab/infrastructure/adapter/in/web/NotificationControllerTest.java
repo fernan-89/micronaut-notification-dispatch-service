@@ -37,6 +37,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class NotificationControllerTest {
 
+    private static final String TENANT = UUID.randomUUID().toString();
+
     private static final String EXECUTOR = "ops-admin";
 
     @Mock private InitiateNotificationUseCase initiateNotificationUseCase;
@@ -76,9 +78,9 @@ class NotificationControllerTest {
     @Test
     @DisplayName("retrieveById returns 200 OK")
     void retrieveById() {
-        when(retrieveNotificationUseCase.execute(notificationId)).thenReturn(Mono.just(sample));
+        when(retrieveNotificationUseCase.execute(notificationId, UUID.fromString(TENANT))).thenReturn(Mono.just(sample));
 
-        StepVerifier.create(controller.retrieveById(notificationId))
+        StepVerifier.create(controller.retrieveById(notificationId, TENANT))
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatus()))
                 .verifyComplete();
     }
@@ -86,9 +88,9 @@ class NotificationControllerTest {
     @Test
     @DisplayName("retrieveById propagates a 404 from the use case")
     void retrieveByIdNotFound() {
-        when(retrieveNotificationUseCase.execute(notificationId)).thenReturn(Mono.error(new NotificationNotFoundException(notificationId)));
+        when(retrieveNotificationUseCase.execute(notificationId, UUID.fromString(TENANT))).thenReturn(Mono.error(new NotificationNotFoundException(notificationId)));
 
-        StepVerifier.create(controller.retrieveById(notificationId))
+        StepVerifier.create(controller.retrieveById(notificationId, TENANT))
                 .expectError(NotificationNotFoundException.class)
                 .verify();
     }
@@ -106,31 +108,31 @@ class NotificationControllerTest {
     @Test
     @DisplayName("each control endpoint dispatches its action and returns 204")
     void controlEndpoints() {
-        when(controlNotificationUseCase.execute(eq(notificationId), any(ControlNotificationUseCase.Action.class), eq(EXECUTOR)))
+        when(controlNotificationUseCase.execute(eq(notificationId), eq(UUID.fromString(TENANT)), any(ControlNotificationUseCase.Action.class), eq(EXECUTOR)))
                 .thenReturn(Mono.empty());
 
-        StepVerifier.create(controller.controlSend(notificationId, EXECUTOR))
+        StepVerifier.create(controller.controlSend(notificationId, TENANT, EXECUTOR))
                 .assertNext(r -> assertEquals(HttpStatus.NO_CONTENT, r.getStatus())).verifyComplete();
-        StepVerifier.create(controller.controlDeliver(notificationId, EXECUTOR))
+        StepVerifier.create(controller.controlDeliver(notificationId, TENANT, EXECUTOR))
                 .assertNext(r -> assertEquals(HttpStatus.NO_CONTENT, r.getStatus())).verifyComplete();
-        StepVerifier.create(controller.controlRetry(notificationId, EXECUTOR))
+        StepVerifier.create(controller.controlRetry(notificationId, TENANT, EXECUTOR))
                 .assertNext(r -> assertEquals(HttpStatus.NO_CONTENT, r.getStatus())).verifyComplete();
-        StepVerifier.create(controller.controlCancel(notificationId, EXECUTOR))
+        StepVerifier.create(controller.controlCancel(notificationId, TENANT, EXECUTOR))
                 .assertNext(r -> assertEquals(HttpStatus.NO_CONTENT, r.getStatus())).verifyComplete();
 
-        verify(controlNotificationUseCase).execute(notificationId, ControlNotificationUseCase.Action.SEND, EXECUTOR);
-        verify(controlNotificationUseCase).execute(notificationId, ControlNotificationUseCase.Action.DELIVER, EXECUTOR);
-        verify(controlNotificationUseCase).execute(notificationId, ControlNotificationUseCase.Action.RETRY, EXECUTOR);
-        verify(controlNotificationUseCase).execute(notificationId, ControlNotificationUseCase.Action.CANCEL, EXECUTOR);
+        verify(controlNotificationUseCase).execute(notificationId, UUID.fromString(TENANT), ControlNotificationUseCase.Action.SEND, EXECUTOR);
+        verify(controlNotificationUseCase).execute(notificationId, UUID.fromString(TENANT), ControlNotificationUseCase.Action.DELIVER, EXECUTOR);
+        verify(controlNotificationUseCase).execute(notificationId, UUID.fromString(TENANT), ControlNotificationUseCase.Action.RETRY, EXECUTOR);
+        verify(controlNotificationUseCase).execute(notificationId, UUID.fromString(TENANT), ControlNotificationUseCase.Action.CANCEL, EXECUTOR);
     }
 
     @Test
     @DisplayName("a control endpoint surfaces an illegal transition")
     void controlIllegalTransition() {
-        when(controlNotificationUseCase.execute(notificationId, ControlNotificationUseCase.Action.DELIVER, EXECUTOR))
+        when(controlNotificationUseCase.execute(notificationId, UUID.fromString(TENANT), ControlNotificationUseCase.Action.DELIVER, EXECUTOR))
                 .thenReturn(Mono.error(new InvalidNotificationStatusException("illegal")));
 
-        StepVerifier.create(controller.controlDeliver(notificationId, EXECUTOR))
+        StepVerifier.create(controller.controlDeliver(notificationId, TENANT, EXECUTOR))
                 .expectError(InvalidNotificationStatusException.class)
                 .verify();
     }
@@ -139,9 +141,9 @@ class NotificationControllerTest {
     @DisplayName("controlFail returns 204 No Content")
     void controlFail() {
         FailNotificationRequest request = new FailNotificationRequest("smtp down");
-        when(failNotificationUseCase.execute(notificationId, EXECUTOR, "smtp down")).thenReturn(Mono.empty());
+        when(failNotificationUseCase.execute(notificationId, UUID.fromString(TENANT), EXECUTOR, "smtp down")).thenReturn(Mono.empty());
 
-        StepVerifier.create(controller.controlFail(notificationId, EXECUTOR, request))
+        StepVerifier.create(controller.controlFail(notificationId, TENANT, EXECUTOR, request))
                 .assertNext(response -> assertEquals(HttpStatus.NO_CONTENT, response.getStatus()))
                 .verifyComplete();
     }

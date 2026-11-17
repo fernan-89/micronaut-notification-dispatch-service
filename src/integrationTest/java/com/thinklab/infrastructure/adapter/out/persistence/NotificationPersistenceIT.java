@@ -55,7 +55,8 @@ class NotificationPersistenceIT implements TestPropertyProvider {
     void createAndFind() {
         Notification created = newNotification(UUID.randomUUID());
 
-        Notification found = notifications.findById(created.getId()).block();
+        Notification found = notifications.findById(created.getId(), created.getOrganisationId()).block();
+        assertNull(notifications.findById(created.getId(), UUID.randomUUID()).block(), "another tenant's notification is the same as none");
 
         assertEquals("ada@thinklab.com", found.getRecipient());
         assertEquals(NotificationStatus.PENDING, found.getStatus());
@@ -75,7 +76,7 @@ class NotificationPersistenceIT implements TestPropertyProvider {
 
         notifications.updateStatus(failed.getId(), NotificationStatus.PENDING, 0, NotificationStatus.FAILED, 3, "smtp timeout").block();
 
-        Notification found = notifications.findById(failed.getId()).block();
+        Notification found = notifications.findById(failed.getId(), failed.getOrganisationId()).block();
         assertEquals(NotificationStatus.FAILED, found.getStatus());
         assertEquals(3, found.getAttempts());
         assertEquals("smtp timeout", found.getLastError());
@@ -90,7 +91,7 @@ class NotificationPersistenceIT implements TestPropertyProvider {
     void notFound() {
         UUID unknown = UUID.randomUUID();
 
-        assertNull(notifications.findById(unknown).block());
+        assertNull(notifications.findById(unknown, UUID.randomUUID()).block());
         assertThrows(NotificationNotFoundException.class,
                 () -> notifications.updateStatus(unknown, NotificationStatus.PENDING, 0, NotificationStatus.CANCELLED, 0, null).block());
     }

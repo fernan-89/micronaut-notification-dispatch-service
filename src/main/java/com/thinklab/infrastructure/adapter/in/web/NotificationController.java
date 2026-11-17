@@ -82,10 +82,10 @@ public class NotificationController {
 
     /** Behavior Qualifier: {@code retrieve}. Fetches a single Notification by UUID. */
     @Get("/{id}/retrieve")
-    public Mono<HttpResponse<NotificationResponse>> retrieveById(@PathVariable UUID id) {
+    public Mono<HttpResponse<NotificationResponse>> retrieveById(@PathVariable UUID id, @Header(TENANT_HEADER) @NotBlank String tenantId) {
         log.info("[ACTION: RETRIEVE_NOTIFICATION] Received request to get notification by ID: {}", id);
 
-        return retrieveNotificationUseCase.execute(id).map(HttpResponse::ok);
+        return retrieveNotificationUseCase.execute(id, UUID.fromString(tenantId)).map(HttpResponse::ok);
     }
 
     /** Behavior Qualifier: {@code retrieve} (collection). Lists Notifications scoped to a tenant. */
@@ -101,43 +101,43 @@ public class NotificationController {
 
     /** Behavior Qualifier: {@code control/send}. */
     @Put("/{id}/control/send")
-    public Mono<HttpResponse<Void>> controlSend(@PathVariable UUID id, @Header(EXECUTOR_HEADER) @NotBlank String executor) {
-        return control(id, ControlNotificationUseCase.Action.SEND, executor);
+    public Mono<HttpResponse<Void>> controlSend(@PathVariable UUID id, @Header(TENANT_HEADER) @NotBlank String tenantId, @Header(EXECUTOR_HEADER) @NotBlank String executor) {
+        return control(id, tenantId, ControlNotificationUseCase.Action.SEND, executor);
     }
 
     /** Behavior Qualifier: {@code control/deliver}. */
     @Put("/{id}/control/deliver")
-    public Mono<HttpResponse<Void>> controlDeliver(@PathVariable UUID id, @Header(EXECUTOR_HEADER) @NotBlank String executor) {
-        return control(id, ControlNotificationUseCase.Action.DELIVER, executor);
+    public Mono<HttpResponse<Void>> controlDeliver(@PathVariable UUID id, @Header(TENANT_HEADER) @NotBlank String tenantId, @Header(EXECUTOR_HEADER) @NotBlank String executor) {
+        return control(id, tenantId, ControlNotificationUseCase.Action.DELIVER, executor);
     }
 
     /** Behavior Qualifier: {@code control/fail}. The only control action carrying a body. */
     @Put("/{id}/control/fail")
     public Mono<HttpResponse<Void>> controlFail(
-            @PathVariable UUID id,
+            @PathVariable UUID id, @Header(TENANT_HEADER) @NotBlank String tenantId,
             @Header(EXECUTOR_HEADER) @NotBlank String executor,
             @Body @Valid FailNotificationRequest request
     ) {
         log.info("[ACTION: CONTROL_NOTIFICATION] [EXECUTOR: {}] FAIL for ID: {}", executor, id);
 
-        return failNotificationUseCase.execute(id, executor, request.errorMessage()).thenReturn(HttpResponse.noContent());
+        return failNotificationUseCase.execute(id, UUID.fromString(tenantId), executor, request.errorMessage()).thenReturn(HttpResponse.noContent());
     }
 
     /** Behavior Qualifier: {@code control/retry}. Allowed from FAILED or SENDING (see the domain model). */
     @Put("/{id}/control/retry")
-    public Mono<HttpResponse<Void>> controlRetry(@PathVariable UUID id, @Header(EXECUTOR_HEADER) @NotBlank String executor) {
-        return control(id, ControlNotificationUseCase.Action.RETRY, executor);
+    public Mono<HttpResponse<Void>> controlRetry(@PathVariable UUID id, @Header(TENANT_HEADER) @NotBlank String tenantId, @Header(EXECUTOR_HEADER) @NotBlank String executor) {
+        return control(id, tenantId, ControlNotificationUseCase.Action.RETRY, executor);
     }
 
     /** Behavior Qualifier: {@code control/cancel}. */
     @Put("/{id}/control/cancel")
-    public Mono<HttpResponse<Void>> controlCancel(@PathVariable UUID id, @Header(EXECUTOR_HEADER) @NotBlank String executor) {
-        return control(id, ControlNotificationUseCase.Action.CANCEL, executor);
+    public Mono<HttpResponse<Void>> controlCancel(@PathVariable UUID id, @Header(TENANT_HEADER) @NotBlank String tenantId, @Header(EXECUTOR_HEADER) @NotBlank String executor) {
+        return control(id, tenantId, ControlNotificationUseCase.Action.CANCEL, executor);
     }
 
-    private Mono<HttpResponse<Void>> control(UUID id, ControlNotificationUseCase.Action action, String executor) {
+    private Mono<HttpResponse<Void>> control(UUID id, String tenantId, ControlNotificationUseCase.Action action, String executor) {
         log.info("[ACTION: CONTROL_NOTIFICATION] [EXECUTOR: {}] {} for ID: {}", executor, action, id);
 
-        return controlNotificationUseCase.execute(id, action, executor).thenReturn(HttpResponse.noContent());
+        return controlNotificationUseCase.execute(id, UUID.fromString(tenantId), action, executor).thenReturn(HttpResponse.noContent());
     }
 }

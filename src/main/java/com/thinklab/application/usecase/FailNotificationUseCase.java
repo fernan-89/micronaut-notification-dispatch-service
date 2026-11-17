@@ -22,10 +22,10 @@ public class FailNotificationUseCase {
         this.notificationRepository = notificationRepository;
     }
 
-    public Mono<Void> execute(UUID id, String executor, String errorMessage) {
+    public Mono<Void> execute(UUID id, UUID organisationId, String executor, String errorMessage) {
         log.info("[USE CASE] Failing notification ID: {} reason: {}", id, errorMessage);
 
-        return notificationRepository.findById(id)
+        return notificationRepository.findById(id, organisationId)
                 .switchIfEmpty(Mono.error(new NotificationNotFoundException(id)))
                 .flatMap(notification -> {
                     NotificationStatus statusRead = notification.getStatus();

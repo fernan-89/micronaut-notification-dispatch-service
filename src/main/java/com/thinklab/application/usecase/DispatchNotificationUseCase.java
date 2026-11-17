@@ -33,10 +33,10 @@ public class DispatchNotificationUseCase {
         this.channels = channels;
     }
 
-    public Mono<Void> execute(UUID id) {
+    public Mono<Void> execute(UUID id, UUID organisationId) {
         log.info("[USE CASE] Dispatching notification ID: {}", id);
 
-        return notificationRepository.findById(id)
+        return notificationRepository.findById(id, organisationId)
                 .switchIfEmpty(Mono.error(new NotificationNotFoundException(id)))
                 .flatMap(notification -> {
                     NotificationStatus statusRead = notification.getStatus();

@@ -87,10 +87,10 @@ public class NotificationMongoRepositoryAdapter implements NotificationRepositor
     }
 
     @Override
-    public Mono<Notification> findById(UUID id) {
+    public Mono<Notification> findById(UUID id, UUID organisationId) {
         log.debug("[PERSISTENCE] Fetching Notification Aggregate by ID: {}", id);
 
-        return Mono.from(getCollection().find(Filters.eq(FIELD_ID, id)).first())
+        return Mono.from(getCollection().find(Filters.and(Filters.eq(FIELD_ID, id), Filters.eq("organisationId", organisationId))).first())
                 .map(NotificationPersistenceMapper::toDomain);
     }
 

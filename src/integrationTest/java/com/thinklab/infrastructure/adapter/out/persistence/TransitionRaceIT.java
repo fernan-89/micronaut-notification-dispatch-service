@@ -55,13 +55,13 @@ class TransitionRaceIT implements TestPropertyProvider {
         Notification notification = pending();
 
         List<String> results = Flux.range(0, 10)
-                .flatMap(i -> control.execute(notification.getId(), ControlNotificationUseCase.Action.CANCEL, EXECUTOR).thenReturn("OK")
+                .flatMap(i -> control.execute(notification.getId(), notification.getOrganisationId(), ControlNotificationUseCase.Action.CANCEL, EXECUTOR).thenReturn("OK")
                         .onErrorResume(e -> Mono.just(e.getClass().getSimpleName())), 10)
                 .collectList().block(Duration.ofSeconds(30));
 
         assertEquals(1, results.stream().filter("OK"::equals).count(), results.toString());
         assertEquals(9, results.stream().filter(InvalidNotificationStatusException.class.getSimpleName()::equals).count(), results.toString());
-        assertEquals(NotificationStatus.CANCELLED, notifications.findById(notification.getId()).block().getStatus());
+        assertEquals(NotificationStatus.CANCELLED, notifications.findById(notification.getId(), notification.getOrganisationId()).block().getStatus());
     }
 
     @Test
@@ -71,12 +71,12 @@ class TransitionRaceIT implements TestPropertyProvider {
         notifications.updateStatus(notification.getId(), NotificationStatus.PENDING, 0, NotificationStatus.FAILED, 1, "smtp down").block();
 
         List<String> results = Flux.range(0, 10)
-                .flatMap(i -> control.execute(notification.getId(), ControlNotificationUseCase.Action.RETRY, EXECUTOR).thenReturn("OK")
+                .flatMap(i -> control.execute(notification.getId(), notification.getOrganisationId(), ControlNotificationUseCase.Action.RETRY, EXECUTOR).thenReturn("OK")
                         .onErrorResume(e -> Mono.just(e.getClass().getSimpleName())), 10)
                 .collectList().block(Duration.ofSeconds(30));
 
         long winners = results.stream().filter("OK"::equals).count();
-        Notification stored = notifications.findById(notification.getId()).block();
+        Notification stored = notifications.findById(notification.getId(), notification.getOrganisationId()).block();
         assertEquals(1 + winners, stored.getAttempts(), "every winning retry consumes one attempt, and a refused one none: " + results);
         assertEquals(NotificationStatus.SENDING, stored.getStatus());
     }
@@ -88,14 +88,14 @@ class TransitionRaceIT implements TestPropertyProvider {
 
         List<String> results = Flux.just("DISPATCH", "CANCEL")
                 .flatMap(action -> ("DISPATCH".equals(action)
-                        ? dispatch.execute(notification.getId())
-                        : control.execute(notification.getId(), ControlNotificationUseCase.Action.CANCEL, EXECUTOR))
+                        ? dispatch.execute(notification.getId(), notification.getOrganisationId())
+                        : control.execute(notification.getId(), notification.getOrganisationId(), ControlNotificationUseCase.Action.CANCEL, EXECUTOR))
                         .thenReturn(action).onErrorResume(e -> Mono.just("REFUSED")), 2)
                 .collectList().block(Duration.ofSeconds(30));
 
         List<String> winners = results.stream().filter(r -> !"REFUSED".equals(r)).toList();
         assertEquals(1, winners.size(), results.toString());
         NotificationStatus expected = "DISPATCH".equals(winners.get(0)) ? NotificationStatus.DELIVERED : NotificationStatus.CANCELLED;
-        assertEquals(expected, notifications.findById(notification.getId()).block().getStatus());
+        assertEquals(expected, notifications.findById(notification.getId(), notification.getOrganisationId()).block().getStatus());
     }
 }

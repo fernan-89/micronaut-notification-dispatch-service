@@ -40,7 +40,7 @@ class NotificationMongoRepositoryAdapterDatabaseTest {
     void usesTheConfiguredDatabase() {
         MongoClient client = clientServing("notifications_prod");
 
-        new NotificationMongoRepositoryAdapter(client, "mongodb://mongo:27017/notifications_prod").findById(UUID.randomUUID()).block();
+        new NotificationMongoRepositoryAdapter(client, "mongodb://mongo:27017/notifications_prod").findById(UUID.randomUUID(), UUID.randomUUID()).block();
 
         verify(client).getDatabase("notifications_prod");
     }
@@ -50,7 +50,7 @@ class NotificationMongoRepositoryAdapterDatabaseTest {
     void fallsBackToTheDefaultDatabase() {
         MongoClient client = clientServing(NotificationMongoRepositoryAdapter.DEFAULT_DATABASE);
 
-        new NotificationMongoRepositoryAdapter(client, "mongodb://mongo:27017").findById(UUID.randomUUID()).block();
+        new NotificationMongoRepositoryAdapter(client, "mongodb://mongo:27017").findById(UUID.randomUUID(), UUID.randomUUID()).block();
 
         verify(client).getDatabase(NotificationMongoRepositoryAdapter.DEFAULT_DATABASE);
     }
